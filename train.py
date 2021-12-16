@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from datasets import Dataset, load_metric
 from pprint import pprint
+import librosa
+import numpy as np
 import torchaudio
 
 from transformers import Wav2Vec2CTCTokenizer
@@ -53,6 +55,12 @@ def speech_file_to_array(batch):
     return batch
 
 
+def resample(batch):
+    batch["speech"] = librosa.resample(np.asarray(batch["speech"]), 48_000, 16_000)
+    batch["sampling_rate"] = 16_000
+    return batch
+
+
 def prepare_dataset(processor, batch):
     # check that all files have the correct sampling rate
     assert (
@@ -68,7 +76,7 @@ def prepare_dataset(processor, batch):
     return batch
 
 
-def compute_metrics(processor, pred):
+def compute_metrics(processor, wer_metric, pred):
     pred_logits = pred.predictions
     pred_ids = np.argmax(pred_logits, axis=-1)
 
@@ -81,6 +89,24 @@ def compute_metrics(processor, pred):
     wer = wer_metric.compute(predictions=pred_str, references=label_str)
 
     return {"wer": wer}
+
+
+# https://discuss.huggingface.co/t/wav2vec2-0-memory-issue/4868
+def remove_long_common_voicedata(dataset, max_seconds=6):
+    # convert pyarrow table to pandas
+    dftest = dataset.to_pandas()
+
+    # find out length of input_values
+    dftest["len"] = dftest["speech"].apply(len)
+
+    # for wav2vec training we already resampled to 16khz
+    # remove data that is longer than max_seconds (6 seconds ideal)
+    maxLength = max_seconds * 16000
+    dftest = dftest[dftest["len"] < maxLength]
+    dftest = dftest.drop("len", 1)
+
+    # convert back to pyarrow table to use in trainer
+    return dataset.from_pandas(dftest)
 
 
 def main():
@@ -100,14 +126,6 @@ def main():
 
     train_dataset = dataset["train"]
     test_dataset = dataset["test"]
-
-    vocab_train = train_dataset.map(
-        extract_all_chars,
-        batched=True,
-        batch_size=-1,
-        keep_in_memory=True,
-        remove_columns=train_dataset.column_names,
-    )
 
     vocab_train = train_dataset.map(
         extract_all_chars,
@@ -152,12 +170,11 @@ def main():
 
     processor.save_pretrained("container_0/wav2vec2-large-xlsr-ja")
 
-    train_dataset = train_dataset.map(
-        speech_file_to_array, remove_columns=train_dataset.column_names
-    )
-    test_dataset = test_dataset.map(
-        speech_file_to_array, remove_columns=test_dataset.column_names
-    )
+    train_dataset = train_dataset.map(speech_file_to_array)
+    test_dataset = test_dataset.map(speech_file_to_array)
+
+    train_dataset = remove_long_common_voicedata(train_dataset)
+    test_dataset = remove_long_common_voicedata(test_dataset)
 
     print(train_dataset["sampling_rate"][:10])
 
@@ -201,21 +218,21 @@ def main():
         output_dir="container_0/ckpts/",
         logging_dir="container_0/runs/",
         group_by_length=True,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
         gradient_accumulation_steps=2,
         evaluation_strategy="steps",
         num_train_epochs=30,
         fp16=True,
-        save_steps=200,
-        eval_steps=200,
-        logging_steps=200,
+        save_steps=1000,
+        eval_steps=1000,
+        logging_steps=1000,
         learning_rate=4e-4,
-        warmup_steps=int(0.1 * 1320),  # 10%
+        warmup_steps=int(0.1 * len(train_dataset)),  # 10%
         save_total_limit=2,
     )
 
-    _compute_metrics = partial(compute_metrics, processor)
+    _compute_metrics = partial(compute_metrics, processor, wer_metric)
 
     trainer = Trainer(
         model=model,
