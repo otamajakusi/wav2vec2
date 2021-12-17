@@ -1,9 +1,11 @@
 import sys
 import argparse
-
+import numpy as np
 import torch
 import torchaudio
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+
+from vad import VAD
 
 model_name = "container_0/wav2vec2-large-xlsr-ja"
 device = "cuda"
@@ -42,10 +44,28 @@ def predict(data):
     return decoded_results
 
 
+def vad_predict():
+    vad = VAD(0.8)
+    vad.start()
+    try:
+        while True:
+            data = {}
+            speech_i16 = np.frombuffer(vad.get_voice(), np.int16)
+            data['speech'] = vad._int2float(speech_i16)
+            data['sampling_rate'] = 16_000
+            out = predict(data)
+            print(out)
+    except KeyboardInterrupt:
+        vad.stop()
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--wav", required=True)
+    parser.add_argument("--wav")
     args = parser.parse_args()
-    wav = load_file_to_data(args.wav)
-    out = predict(wav)
-    print(out)
+
+    if args.wav is None:
+        vad_predict()
+    else:
+        wav = load_file_to_data(args.wav)
+        out = predict(wav)
+        print(out)
