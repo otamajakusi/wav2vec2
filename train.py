@@ -245,7 +245,7 @@ def main():
     )
 
     trainer.train()
-    trainer.save_model("container_0/wav2vec2-large-xlsr-kn")
+    trainer.save_model("container_0/wav2vec2-large-xlsr-ja")
 
 
 if __name__ == "__main__":
