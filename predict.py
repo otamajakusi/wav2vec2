@@ -19,7 +19,8 @@ def load_file_to_data(file):
     batch = {}
     speech, sampling_rate = torchaudio.load(file)
     resampler = torchaudio.transforms.Resample(orig_freq=sampling_rate, new_freq=16_000)
-    print(f"{sampling_rate=}")
+    print(f"{sampling_rate=},{speech.shape=},{speech.squeeze(0).shape=}")
+    print(speech.squeeze(0).numpy())
     batch["speech"] = resampler.forward(speech.squeeze(0)).numpy()
     batch["sampling_rate"] = resampler.new_freq
     return batch
@@ -51,12 +52,13 @@ def vad_predict():
         while True:
             data = {}
             speech_i16 = np.frombuffer(vad.get_voice(), np.int16)
-            data['speech'] = vad._int2float(speech_i16)
-            data['sampling_rate'] = 16_000
+            data["speech"] = vad._int2float(speech_i16)
+            data["sampling_rate"] = 16_000
             out = predict(data)
             print(out)
     except KeyboardInterrupt:
         vad.stop()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -66,7 +66,7 @@ class VAD:
             vad_outs = self._validate(torch.from_numpy(audio_float32))
 
             # get the confidence value so that jupyterplot can process it
-            confidence = vad_outs[:, 1].numpy()[0].item()
+            confidence = vad_outs.numpy()[0].item()
             if confidence > self.confidence:
                 data.append(audio_chunk)
                 print(f"speeking {confidence:.2f}")
@@ -85,7 +85,7 @@ class VAD:
 
     def _validate(self, inputs: torch.Tensor):
         with torch.no_grad():
-            outs = self.model(inputs)
+            outs = self.model(inputs, sr=16_000)
         return outs
 
 
