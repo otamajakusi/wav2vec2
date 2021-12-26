@@ -7,12 +7,7 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 from vad import VAD
 
-model_name = "container_0/wav2vec2-large-xlsr-ja"
 device = "cuda"
-processor_name = "container_0/wav2vec2-large-xlsr-ja"
-
-model = Wav2Vec2ForCTC.from_pretrained(model_name).to(device)
-processor = Wav2Vec2Processor.from_pretrained(processor_name)
 
 
 def load_file_to_data(file):
@@ -26,7 +21,7 @@ def load_file_to_data(file):
     return batch
 
 
-def predict(data):
+def predict(data, mode, processor):
     features = processor(
         data["speech"],
         sampling_rate=data["sampling_rate"],
@@ -45,7 +40,7 @@ def predict(data):
     return decoded_results
 
 
-def vad_predict():
+def vad_predict(model, processor):
     vad = VAD(0.8)
     vad.start()
     try:
@@ -54,7 +49,7 @@ def vad_predict():
             speech_i16 = np.frombuffer(vad.get_voice(), np.int16)
             data["speech"] = vad._int2float(speech_i16)
             data["sampling_rate"] = 16_000
-            out = predict(data)
+            out = predict(data, model, processor)
             print(out)
     except KeyboardInterrupt:
         vad.stop()
@@ -63,11 +58,17 @@ def vad_predict():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--wav")
+    parser.add_argument("--model")
     args = parser.parse_args()
+    model_name = args.model
+    processor_name = args.model
+
+    model = Wav2Vec2ForCTC.from_pretrained(model_name).to(device)
+    processor = Wav2Vec2Processor.from_pretrained(processor_name)
 
     if args.wav is None:
-        vad_predict()
+        vad_predict(model, processor)
     else:
         wav = load_file_to_data(args.wav)
-        out = predict(wav)
+        out = predict(wav, model, processor)
         print(out)
